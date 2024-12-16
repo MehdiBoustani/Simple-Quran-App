@@ -74,7 +74,6 @@ class QuranScreen extends StatefulWidget {
 class _QuranScreenState extends State<QuranScreen> {
   int surahNumber = 1;
   double _fontSize = 28.0;
-  double _symboleSize = 20.0;
   bool _showControls = false;
 
   // Liste des noms de sourates en arabe
