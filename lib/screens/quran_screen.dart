@@ -3,7 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/quran_api_service.dart';
 import '../models/surah.dart';
 import '../models/verse.dart';
-import '../widgets/verse_display.dart';
+import '../models/verse_segment.dart';
 import '../widgets/bismillah.dart';
 
 class QuranScreen extends StatefulWidget {
@@ -44,7 +44,6 @@ class _QuranScreenState extends State<QuranScreen> {
       await _loadPreferences();
       await _loadSurahs();
     } catch (e) {
-      print('Error initializing app: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -75,7 +74,6 @@ class _QuranScreenState extends State<QuranScreen> {
         await _loadCurrentPage();
       }
     } catch (e) {
-      print('Error loading surahs: $e');
       rethrow;
     }
   }
@@ -104,7 +102,7 @@ class _QuranScreenState extends State<QuranScreen> {
               await _apiService.getQuranPages(_currentPage + 1);
           _pageCache[_currentPage + 1] = nextPageData['verses'] as List<Verse>;
         } catch (e) {
-          print('Error preloading next page: $e');
+          // Ignore preloading errors
         }
       }
 
@@ -115,7 +113,6 @@ class _QuranScreenState extends State<QuranScreen> {
         });
       }
     } catch (e) {
-      print('Error loading page $_currentPage: $e');
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -137,17 +134,23 @@ class _QuranScreenState extends State<QuranScreen> {
 
   void _handlePageChange(int page) {
     setState(() {
-      _currentPage = page;
+      _currentPage = page + 1;
     });
     _loadCurrentPage();
-    _saveCurrentPage(page);
+    _saveCurrentPage(_currentPage);
   }
 
+  String _toArabicDigits(String number) {
+    const english = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+    const arabic = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+    for (int i = 0; i < english.length; i++) {
+      number = number.replaceAll(english[i], arabic[i]);
+    }
+    return number;
+  }
 
   @override
   Widget build(BuildContext context) {
-    final textColor = Theme.of(context).textTheme.bodyLarge?.color;
-
     if (_surahs == null || _isLoading) {
       return const Scaffold(
         body: Center(
@@ -179,64 +182,48 @@ class _QuranScreenState extends State<QuranScreen> {
                       horizontal: 24.0, vertical: 16.0),
                   child: Column(
                     children: [
-                      if (_currentVerses!.isNotEmpty) _buildHeader(textColor),
+                      if (_currentVerses!.isNotEmpty) _buildHeader(),
                       Expanded(
-                        child: _buildVersesList(textColor),
+                        child: _buildVersesList(),
                       ),
-                      _buildPageNumber(textColor),
+                      _buildPageNumber(),
                     ],
                   ),
                 );
               },
             ),
-            if (_showControls) _buildControls(textColor),
+            if (_showControls) _buildControls(),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildHeader(Color? textColor) {
+  Widget _buildHeader() {
+    final surah = _surahs!.firstWhere((s) =>
+        s.number == int.parse(_currentVerses!.first.verseKey.split(':')[0]));
+
     return Container(
       padding: const EdgeInsets.only(bottom: 16.0),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).dividerColor.withValues(
-                  alpha: (255 * 0.1).round().toDouble(),
-                ),
-          ),
-        ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Column(
         children: [
           Text(
-            _surahs!
-                .firstWhere((s) =>
-                    s.number ==
-                    int.parse(_currentVerses!.first.verseKey.split(':')[0]))
-                .nameSimple,
-            style: TextStyle(
-              fontSize: 16,
-              color: textColor?.withValues(
-                alpha: (255 * 0.7).round().toDouble(),
-              ),
-              letterSpacing: 0.5,
-            ),
-          ),
-          Text(
-            _surahs!
-                .firstWhere((s) =>
-                    s.number ==
-                    int.parse(_currentVerses!.first.verseKey.split(':')[0]))
-                .nameArabic,
+            surah.nameArabic,
             style: TextStyle(
               fontFamily: 'Uthmani',
-              fontSize: 22,
-              color: textColor?.withValues(
-                alpha: (255 * 0.7).round().toDouble(),
-              ),
+              fontSize: 32,
+              color:
+                  Theme.of(context).textTheme.bodyLarge?.color?.withAlpha(230),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            surah.nameSimple,
+            style: TextStyle(
+              fontSize: 16,
+              color:
+                  Theme.of(context).textTheme.bodyLarge?.color?.withAlpha(179),
+              letterSpacing: 0.5,
             ),
           ),
         ],
@@ -244,58 +231,147 @@ class _QuranScreenState extends State<QuranScreen> {
     );
   }
 
-  Widget _buildVersesList(Color? textColor) {
-    if (_currentVerses!.isNotEmpty) {
-      print('Debug Bismillah:');
-      print('Premier verset: ${_currentVerses!.first.textUthmani}');
-      print('Verse key complet: ${_currentVerses!.first.verseKey}');
-      print('Nombre total de versets: ${_currentVerses!.length}');
-    }
-
-    final isStartOfSurah = _currentVerses!.isNotEmpty &&
-        _currentVerses!.first.verseKey.split(':')[1] == '1';
-    final surahNumber = _currentVerses!.isNotEmpty
-        ? int.parse(_currentVerses!.first.verseKey.split(':')[0])
-        : 0;
-    final shouldShowBismillah = isStartOfSurah && surahNumber != 9;
-
-    print('Conditions Bismillah:');
-    print('isStartOfSurah: $isStartOfSurah');
-    print('surahNumber: $surahNumber');
-    print('shouldShowBismillah: $shouldShowBismillah');
-
-    return ScrollConfiguration(
-      behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
-      child: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
+  Widget _buildVersesList() {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: ScrollConfiguration(
+        behavior: const ScrollBehavior().copyWith(overscroll: false),
         child: Directionality(
           textDirection: TextDirection.rtl,
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16.0),
-            child: Column(
-              children: [
-                if (shouldShowBismillah) const Bismillah(),
-                Wrap(
-                  alignment: WrapAlignment.center,
-                  spacing: 8.0,
-                  runSpacing: 16.0,
-                  children: _currentVerses!.map((verse) {
-                    return VerseDisplay(
-                      verse: verse,
-                      fontSize: _fontSize,
-                      textColor: textColor,
-                    );
-                  }).toList(),
-                ),
-              ],
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12.0),
+            child: LayoutBuilder(builder: (context, constraints) {
+              // Calculer la taille de police optimale
+              double optimalFontSize = constraints.maxWidth * 0.05;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: _buildVersesWithBismillah(fontSize: optimalFontSize),
+              );
+            }),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildPageNumber(Color? textColor) {
+  List<Widget> _buildVersesWithBismillah({required double fontSize}) {
+    List<Widget> widgets = [];
+    // Grouper les versets par ligne selon la mise en page standard
+    List<List<VerseSegment>> pageLines = _getStandardPageLayout();
+
+    // Construire le texte avec la mise en page fixe
+    for (var line in pageLines) {
+      if (line.isEmpty) continue;
+
+      // Vérifier si on doit ajouter la Bismillah
+      if (line.first.isStartOfSurah && line.first.surahNumber != 9) {
+        widgets.add(const Padding(
+          padding: EdgeInsets.symmetric(vertical: 16.0),
+          child: Bismillah(),
+        ));
+      }
+
+      // Construire la ligne
+      widgets.add(
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 1.0),
+          child: Text.rich(
+            TextSpan(
+              children: line
+                  .map((segment) => TextSpan(
+                        text: segment.text +
+                            (segment.isEndOfVerse
+                                ? ' ${_toArabicDigits(segment.verseNumber)} '
+                                : ' '),
+                        style: TextStyle(
+                          fontSize: fontSize,
+                          fontFamily: 'Uthmani',
+                          height: 1.8,
+                          letterSpacing: -0.5,
+                        ),
+                      ))
+                  .toList(),
+            ),
+            textAlign: TextAlign.justify,
+            textDirection: TextDirection.rtl,
+          ),
+        ),
+      );
+    }
+
+    return widgets;
+  }
+
+  List<List<VerseSegment>> _getStandardPageLayout() {
+    List<List<VerseSegment>> pageLines = [];
+    List<VerseSegment> currentLine = [];
+    int wordsInCurrentLine = 0;
+    const int maxWordsPerLine =
+        8; // Augmente le nombre maximum de mots par ligne
+
+    for (var verse in _currentVerses!) {
+      final parts = verse.verseKey.split(':');
+      final surahNumber = int.parse(parts[0]);
+      final verseNumber = parts[1];
+
+      List<String> words = verse.text.split(' ');
+      bool isFirstWord = true;
+
+      for (var word in words) {
+        if (isFirstWord && verseNumber == "1") {
+          if (currentLine.isNotEmpty) {
+            pageLines.add(currentLine);
+            currentLine = [];
+            wordsInCurrentLine = 0;
+          }
+          currentLine.add(VerseSegment(
+            text: word,
+            verseNumber: verseNumber,
+            isStartOfSurah: true,
+            surahNumber: surahNumber,
+          ));
+          wordsInCurrentLine++;
+        } else {
+          // Calcule si le mot actuel peut tenir sur la ligne
+          bool shouldStartNewLine = wordsInCurrentLine >= maxWordsPerLine ||
+              (word.length > 10 && wordsInCurrentLine >= maxWordsPerLine - 2);
+
+          if (shouldStartNewLine && currentLine.isNotEmpty) {
+            pageLines.add(currentLine);
+            currentLine = [];
+            wordsInCurrentLine = 0;
+          }
+
+          currentLine.add(VerseSegment(
+            text: word,
+            verseNumber: verseNumber,
+            surahNumber: surahNumber,
+          ));
+          wordsInCurrentLine++;
+        }
+        isFirstWord = false;
+      }
+
+      // Marquer le dernier segment comme fin de verset
+      if (currentLine.isNotEmpty) {
+        var lastSegment = currentLine.last;
+        currentLine[currentLine.length - 1] = VerseSegment(
+          text: lastSegment.text,
+          verseNumber: verseNumber,
+          isEndOfVerse: true,
+          surahNumber: surahNumber,
+        );
+      }
+    }
+
+    if (currentLine.isNotEmpty) {
+      pageLines.add(currentLine);
+    }
+
+    return pageLines;
+  }
+
+  Widget _buildPageNumber() {
     return Align(
       alignment: Alignment.centerLeft,
       child: Padding(
@@ -304,9 +380,7 @@ class _QuranScreenState extends State<QuranScreen> {
           _currentPage.toString(),
           style: TextStyle(
             fontSize: 14,
-            color: textColor?.withValues(
-              alpha: (255 * 0.5).round().toDouble(),
-            ),
+            color: Theme.of(context).textTheme.bodyLarge?.color?.withAlpha(128),
             letterSpacing: 0.5,
           ),
         ),
@@ -314,27 +388,24 @@ class _QuranScreenState extends State<QuranScreen> {
     );
   }
 
-  Widget _buildControls(Color? textColor) {
+  Widget _buildControls() {
     return AnimatedOpacity(
       opacity: 1.0,
       duration: const Duration(milliseconds: 200),
       child: Container(
-        color: Colors.black.withValues(
-          alpha: (255 * 0.1).round().toDouble(),
-        ),
+        color: Colors.black.withAlpha(26),
         child: SafeArea(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Container(
                 padding: const EdgeInsets.all(16.0),
-                color: Theme.of(context).scaffoldBackgroundColor.withValues(
-                      alpha: (255 * 0.95).round().toDouble(),
-                    ),
+                color: Theme.of(context).scaffoldBackgroundColor.withAlpha(242),
                 child: Column(
                   children: [
                     _buildSurahDropdown(),
-                    _buildControlBar(textColor),
+                    const SizedBox(height: 16),
+                    _buildControlBar(),
                   ],
                 ),
               ),
@@ -347,14 +418,12 @@ class _QuranScreenState extends State<QuranScreen> {
 
   Widget _buildSurahDropdown() {
     return Container(
-      margin: const EdgeInsets.only(bottom: 16.0),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
         color: Theme.of(context).colorScheme.surface,
         boxShadow: [
           BoxShadow(
-            color:
-                Colors.black.withValues(alpha: (255 * 0.05).round().toDouble()),
+            color: Colors.black.withAlpha(13),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -379,52 +448,9 @@ class _QuranScreenState extends State<QuranScreen> {
                 child: Row(
                   children: [
                     Expanded(
-                      child: RichText(
-                        text: TextSpan(
-                          children: [
-                            TextSpan(
-                              text: surah.nameSimple,
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Theme.of(context)
-                                    .textTheme
-                                    .bodyLarge
-                                    ?.color,
-                              ),
-                            ),
-                            TextSpan(
-                              text: ' (',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Theme.of(context)
-                                    .textTheme
-                                    .bodyLarge
-                                    ?.color,
-                              ),
-                            ),
-                            TextSpan(
-                              text: surah.nameArabic,
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontFamily: 'Uthmani',
-                                color: Theme.of(context)
-                                    .textTheme
-                                    .bodyLarge
-                                    ?.color,
-                              ),
-                            ),
-                            TextSpan(
-                              text: ')',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Theme.of(context)
-                                    .textTheme
-                                    .bodyLarge
-                                    ?.color,
-                              ),
-                            ),
-                          ],
-                        ),
+                      child: Text(
+                        '${surah.nameSimple} (${surah.nameArabic})',
+                        style: const TextStyle(fontSize: 16),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -458,7 +484,6 @@ class _QuranScreenState extends State<QuranScreen> {
                     _isLoading = false;
                   });
                 } catch (e) {
-                  print('Error loading surah: $e');
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
@@ -479,7 +504,7 @@ class _QuranScreenState extends State<QuranScreen> {
     );
   }
 
-  Widget _buildControlBar(Color? textColor) {
+  Widget _buildControlBar() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
       decoration: BoxDecoration(
@@ -507,9 +532,11 @@ class _QuranScreenState extends State<QuranScreen> {
                 hintText: 'Page',
                 border: InputBorder.none,
                 hintStyle: TextStyle(
-                  color: textColor?.withValues(
-                    alpha: (255 * 0.5).round().toDouble(),
-                  ),
+                  color: Theme.of(context)
+                      .textTheme
+                      .bodyLarge
+                      ?.color
+                      ?.withAlpha(128),
                 ),
               ),
             ),
